@@ -79,81 +79,96 @@ class HyperGraph(ABC):
     def _prepare_graph(self):
         raise NotImplementedError()
 
-    def assert_files(self):
-        return os.path.isfile(self.FILENAME_DOC2DOCS) and \
-               os.path.isfile(self.FILENAME_DOC2DOCS_NEG) and \
-               os.path.isfile(self.FILENAME_NODE2DOCS) and \
-               os.path.isfile(self.FILENAME_NODE2NODES) and \
-               os.path.isfile(self.FILENAME_NODES) and \
-               os.path.isfile(self.FILENAME_VECTORS)
-
     def prepare_graph(self):
-        if self.assert_files():
-            print('  - loading from files')
-            self._load_from_files()
-        else:
-            print('  - building from scratch')
-            self.vectors = np.memmap(self.FILENAME_VECTORS, dtype=np.float32, mode='w+',
-                                     shape=(self.num_docs, self.input_dimensions))
-            self.doc2docs = lil_matrix((self.num_docs, self.num_docs), dtype=np.float32)
-            self.doc2docs_neg = lil_matrix((self.num_docs, self.num_docs), dtype=np.float32)
-            self.nodes = {}
-
-            self._prepare_graph_docs()
-            self._prepare_graph()
-            self._build_node_matrices()
-            self._save_to_files()
-
+        self._ensure_doc_vectors()
+        self._ensure_doc2docs()
+        self._ensure_node_data()
+        self._ensure_node_matrices()
         self._is_prepared = True
 
-    def _prepare_graph_docs(self):
-        for i, vector in enumerate(self.gensim_processor.vectors):
-            self.vectors[i] = np.array(vector)
-        print('  - loaded vectors into memmap')
+    def _ensure_doc_vectors(self):
+        if os.path.isfile(self.FILENAME_VECTORS):
+            self.vectors = np.memmap(self.FILENAME_VECTORS, dtype=np.float32,
+                                     shape=(self._num_docs, self.input_dimensions))
+            print('  - loaded document vectors from file')
+        else:
+            self.vectors = np.memmap(self.FILENAME_VECTORS, dtype=np.float32, mode='w+',
+                                     shape=(self.num_docs, self.input_dimensions))
+            for i, vector in enumerate(self.gensim_processor.vectors):
+                self.vectors[i] = np.array(vector)
+            del self.vectors  # resetting here so that vectors are consistently read only for later use
+            self.vectors = np.memmap(self.FILENAME_VECTORS, dtype=np.float32,
+                                     shape=(self._num_docs, self.input_dimensions))
+            print('  - loaded document vectors into memmap')
 
-        for i, (vector, doc) in enumerate(zip(self.vectors, self.gensim_processor.documents)):
-            # get some neighbourhood documents
-            doc_ids, distances = self.hnsw_tree.get_n(vector, self.k_neighbourhood + 1)
-            doc_ids = doc_ids[0]
-            distances = distances[0]
-            self.doc2docs[i, doc_ids[doc_ids != i]] = distances[doc_ids != i]
+    def _ensure_doc2docs(self):
+        if os.path.isfile(self.FILENAME_DOC2DOCS) and os.path.isfile(self.FILENAME_DOC2DOCS_NEG):
+            self.doc2docs = load_npz(self.FILENAME_DOC2DOCS)
+            self.doc2docs_neg = load_npz(self.FILENAME_DOC2DOCS_NEG)
+            print('  - loaded doc2docs and doc2docs_neg from file')
+        else:
+            print('  - preparing doc2doc and doc2doc_neg...')
+            self.doc2docs = lil_matrix((self.num_docs, self.num_docs), dtype=np.float32)
+            self.doc2docs_neg = lil_matrix((self.num_docs, self.num_docs), dtype=np.float32)
 
-            # get some global, non-neighbourhood documents
-            neg_indices = np.random.choice(a=self.num_docs, size=self.k_global, replace=False)
-            neg_vectors = self.vectors[neg_indices]
-            distances = ((vector - neg_vectors) ** 2).sum(axis=1)
-            self.doc2docs_neg[i, neg_indices[neg_indices != i]] = distances[neg_indices != i]
-        print('  - prepared doc2doc and doc2doc_neg')
+            for i, (vector, doc) in enumerate(zip(self.vectors, self.gensim_processor.documents)):
+                # get some neighbourhood documents
+                doc_ids, distances = self.hnsw_tree.get_n(vector, self.k_neighbourhood + 1)
+                doc_ids = doc_ids[0]
+                distances = distances[0]
+                self.doc2docs[i, doc_ids[doc_ids != i]] = distances[doc_ids != i]
 
-    def _load_from_files(self):
-        self.vectors = np.memmap(self.FILENAME_VECTORS, dtype=np.float32,
-                                 shape=(self._num_docs, self.input_dimensions))
-        self.doc2docs = load_npz(self.FILENAME_DOC2DOCS)
-        self.doc2docs_neg = load_npz(self.FILENAME_DOC2DOCS_NEG)
-        self.node2docs = load_npz(self.FILENAME_NODE2DOCS)
-        self.node2nodes = load_npz(self.FILENAME_NODE2NODES)
-        with open(self.FILENAME_NODES, 'r') as f:
-            self.nodes = json.load(f)
+                # get some global, non-neighbourhood documents
+                neg_indices = np.random.choice(a=self.num_docs, size=self.k_global, replace=False)
+                neg_vectors = self.vectors[neg_indices]
+                distances = ((vector - neg_vectors) ** 2).sum(axis=1)
+                self.doc2docs_neg[i, neg_indices[neg_indices != i]] = distances[neg_indices != i]
 
-    def _save_to_files(self):
-        del self.vectors  # resetting here so that vectors are consistently read only for later use
-        self.vectors = np.memmap(self.FILENAME_VECTORS, dtype=np.float32, shape=(self._num_docs, self.input_dimensions))
+            self.doc2docs = self.doc2docs.tocsr()
+            self.doc2docs_neg = self.doc2docs_neg.tocsr()
+            save_npz(self.FILENAME_DOC2DOCS, self.doc2docs)
+            save_npz(self.FILENAME_DOC2DOCS_NEG, self.doc2docs_neg)
+            print('  - prepared doc2doc and doc2doc_neg')
 
-        with open(self.FILENAME_NODES, 'w') as f:
-            json.dump(self.nodes, f)
+    def _ensure_node_data(self):
+        if os.path.isfile(self.FILENAME_NODES):
+            with open(self.FILENAME_NODES, 'r') as f:
+                self.nodes = json.load(f)
+            print('  - loaded node data from file')
+        else:
+            print('  - preparing node data...')
+            self.nodes = {}
+            self._prepare_graph()
 
-        # lil (Row-based linked list sparse matrix) are more efficient for building matrix
-        # csr (Compressed Sparse Row format) is more efficient for arithmetic ops
-        self.doc2docs = self.doc2docs.tocsr()
-        self.doc2docs_neg = self.doc2docs_neg.tocsr()
-        save_npz(self.FILENAME_DOC2DOCS, self.doc2docs)
-        save_npz(self.FILENAME_DOC2DOCS_NEG, self.doc2docs_neg)
-        save_npz(self.FILENAME_NODE2DOCS, self.node2docs)
-        save_npz(self.FILENAME_NODE2NODES, self.node2nodes)
+            with open(self.FILENAME_NODES, 'w') as f:
+                json.dump(self.nodes, f)
+            print('  - prepared node data')
+
+    def _ensure_node_matrices(self):
+        if os.path.isfile(self.FILENAME_NODE2DOCS) and \
+                os.path.isfile(self.FILENAME_NODE2NODES):
+            self.node2docs = load_npz(self.FILENAME_NODE2DOCS)
+            self.node2nodes = load_npz(self.FILENAME_NODE2NODES)
+            print('  - loaded node matrices from files')
+        else:
+            print('  - preparing node matrices...')
+            self.node2docs = lil_matrix((len(self.nodes), self.num_docs), dtype=np.int16)
+            self.node2nodes = lil_matrix((len(self.nodes), len(self.nodes)), dtype=np.int16)
+            print(f'  - nodes: {len(self.nodes)}, docs: {self.num_docs}')
+
+            self._build_node_matrices()
+
+            with open(self.FILENAME_NODES, 'w') as f:
+                json.dump(self.nodes, f)
+            print('  - updated node data')
+
+            self.node2docs = self.node2docs.tocsc()
+            self.node2nodes = self.node2nodes.tocsr()
+            save_npz(self.FILENAME_NODE2DOCS, self.node2docs)
+            save_npz(self.FILENAME_NODE2NODES, self.node2nodes)
+            print('  - prepared node matrices')
 
     def _build_node_matrices(self):
-        self.node2docs = lil_matrix((len(self.nodes), self._num_docs), dtype=np.int16)
-        self.node2nodes = lil_matrix((len(self.nodes), len(self.nodes)), dtype=np.int16)
         for node in self.nodes.values():
             for doc_id in node['docs']:
                 self.node2docs[node['idx'], doc_id] += 1
@@ -168,12 +183,12 @@ class HyperGraph(ABC):
             node['degree'] = int(self.node2nodes[node['idx']].getnnz())
             node['degree_weighted'] = int(self.node2nodes[node['idx']].sum())
 
+        print(f'  - non-zero node2docs: {self.node2docs.getnnz()}, node2nodes: {self.node2nodes.getnnz()}')
         if self.min_node2doc_count is not None:
             self.node2docs[self.node2docs < self.min_node2doc_count] = .0
         if self.min_node2node_count is not None:
             self.node2nodes[self.node2nodes < self.min_node2node_count] = .0
-        self.node2docs = self.node2docs.tocsc()
-        self.node2nodes = self.node2nodes.tocsr()
+        print(f'  - non-zero (filtered) node2docs: {self.node2docs.getnnz()}, node2nodes: {self.node2nodes.getnnz()}')
 
     def _assert_node(self, name, values=None):
         if name not in self.nodes:
@@ -188,7 +203,3 @@ class HyperGraph(ABC):
 
         return self.nodes[name]
 
-    # for each doc -> neighbour docs
-    # for each doc -> non-neighbour docs (optional)
-    # for each doc -> target node (needed?)
-    # for each node -> associated docs
