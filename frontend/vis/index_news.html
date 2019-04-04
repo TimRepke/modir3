@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="description" content="A visualization to explore large networks.">
+    <meta name="author" content="Tim Repke, Ben Hurdelhey">
+
+    <title>Semantic Network Visualization</title>
+
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css"
+          integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO" crossorigin="anonymous">
+
+
+    <!-- Custom styles for this template -->
+    <link href="css/dashboard.css" rel="stylesheet">
+    <link href="css/search.css" rel="stylesheet">
+    <link href="css/peopleSearch.css" rel="stylesheet">
+    <link href="css/peopleRadiobuttons.css" rel="stylesheet">
+    <link href="css/main.css" rel="stylesheet">
+    <link href="https://gitcdn.github.io/bootstrap-toggle/2.2.2/css/bootstrap-toggle.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://ajax.googleapis.com/ajax/libs/jqueryui/1.12.1/themes/smoothness/jquery-ui.css">
+
+</head>
+
+<body>
+
+<nav class="navbar navbar-dark fixed-top bg-dark flex-md-nowrap p-0 shadow" id="top-navbar">
+    <a class="navbar-brand col-sm-3 col-md-2 mr-0" href="#">Vis</a>
+    <button type="button"
+            class="btn btn-primary start mr-1"
+            onclick="reload()"
+            data-loading-text="<i class='icon-spinner icon-spin icon-large'></i> Reloading">
+        <i class="icon-upload icon-large"></i>
+        <span>Reload</span>
+    </button>
+</nav>
+
+<div class="container-fluid vh-100 d-flex">
+
+    <div class="row flex-grow-1">
+        <nav class="col-md-2 d-none d-md-block bg-light sidebar">
+            <div class="sidebar-sticky" style="overflow: hidden">
+
+                <label class="sidebar-heading d-flex justify-content-between align-items-center pl-3 pr-3 pb-0 mt-4 mb-0 text-muted"
+                       for="slider-heatmap">
+                    Dot Size
+                </label>
+                <div id="slider-min-size"
+                     class="ml-2 mt-2 mr-4 slider ui-slider ui-corner-all ui-slider-horizontal ui-widget ui-widget-content">
+                </div>
+
+                <label class="sidebar-heading d-flex justify-content-between align-items-center pl-3 pr-3 pb-0 mt-4 mb-0 text-muted"
+                       for="slider-heatmap">
+                    Heatmap
+                    <input type="checkbox" id="heatmap-checkbox" checked data-toggle="toggle" data-height="5">
+                </label>
+                <div id="slider-heatmap"
+                     class="mt-2 slider-range ui-slider ui-corner-all ui-slider-horizontal ui-widget ui-widget-content pr-10">
+                </div>
+
+                <label class="sidebar-heading d-flex justify-content-between align-items-center pl-3 pr-3 pb-0 mt-4 mb-0 text-muted"
+                       for="slider-connections">
+                    Connections
+                    <input type="checkbox" id="connections-checkbox" checked data-toggle="toggle" data-height="5">
+                </label>
+                <div id="slider-connections"
+                     class="mt-2 slider-range ui-slider ui-corner-all ui-slider-horizontal ui-widget ui-widget-content pr-10">
+                </div>
+
+                <label class="sidebar-heading d-flex justify-content-between align-items-center pl-3 pr-3 pb-0 mt-4 mb-0 text-muted"
+                       for="slider-nodes">
+                    Nodes
+                    <input type="checkbox" id="nodes-checkbox" checked data-toggle="toggle" data-height="5">
+                </label>
+                <div id="slider-nodes"
+                     class="mt-2 slider-range ui-slider ui-corner-all ui-slider-horizontal ui-widget ui-widget-content pr-10">
+                </div>
+
+
+                <label class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-4 mb-1 text-muted"
+                       for="categories_wrap" style="display: none;">
+                    Categories
+                </label>
+                <ul class="nav flex-column" id="categories_wrap" style="display: none;">
+                    <li class="nav-item">
+                        <input type="text" class="nav-searchbar" id="categorySearch" placeholder="Search.."
+                               title="Type in a persons name">
+                    </li>
+                    <li class="nav flex-column">
+                        <div class="persons" id="categories" style="overflow-y: auto; height: 200px"></div>
+                    </li>
+                </ul>
+
+                <label class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-4 mb-1 text-muted"
+                       for="people">
+                    Companies
+                </label>
+                <ul class="nav flex-column" id="people">
+                    <li class="nav-item">
+
+                        <input type="text" class="nav-searchbar" id="personSearch"
+                               placeholder="Search.."
+                               title="Type in a persons name">
+
+                    </li>
+                    <li class="nav flex-column">
+
+                        <div class="persons" id="persons" style="overflow-y: auto; height: 500px"></div>
+
+                    </li>
+                </ul>
+
+
+            </div>
+        </nav>
+
+        <main role="main" class="col-md-9 ml-sm-auto col-lg-10 px-0" id="main">
+
+            <div class="modal fade" id="email-modal" tabindex="-1" role="dialog" aria-labelledby="myModalLabel"
+                 aria-hidden="true" style="display: none;">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h4 class="modal-title"></h4>
+                            <button type="button" class="close" data-dismiss="modal">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="pt-0 pb-0 mb-0 graph" id="graph"></div>
+
+        </main>
+    </div>
+</div>
+
+<pre id="hover-mail"></pre>
+
+
+<!-- Bootstrap core JavaScript
+================================================== -->
+<!-- Placed at the end of the document so the pages load faster -->
+<script src="https://code.jquery.com/jquery-3.3.1.slim.min.js"
+        integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo"
+        crossorigin="anonymous"></script>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+<script src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.12.1/jquery-ui.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.3/umd/popper.min.js"
+        integrity="sha384-ZMP7rVo3mIykV+2+9J3UJ46jBk0WLaUAdn689aCwoqbBJiSnjAK/l8WvCWPIPm49"
+        crossorigin="anonymous"></script>
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.min.js"
+        integrity="sha384-ChfqqxuZUCnJSK3+MXmPNIyE6ZbWh2IMqE241rYiqJxyMiZ6OW/JmZQ5stwEULTy"
+        crossorigin="anonymous"></script>
+
+<!-- D3 -->
+<script src="https://d3js.org/d3.v4.min.js"></script>
+<script src="https://d3js.org/d3-hsv.v0.1.min.js"></script>
+<script src="https://d3js.org/d3-contour.v1.min.js"></script>
+
+<!-- Icons -->
+<script src="https://unpkg.com/feather-icons/dist/feather.min.js"></script>
+<script>feather.replace()</script>
+
+
+<script src="https://unpkg.com/lunr/lunr.js"></script>
+
+<script src="https://gitcdn.github.io/bootstrap-toggle/2.2.2/js/bootstrap-toggle.min.js"></script>
+
+
+<!-- my scripts -->
+
+
+<!-- remap tooltip so can be at the same time as modal -->
+<script>
+    //let file = '/data/export_modir_01.json';
+    let file = '/data/news.json';
+    $(document).ready(function () {
+        $('body').tooltip({
+            selector: "[data-tooltip=tooltip]",
+            container: "body"
+        });
+    });
+</script>
+
+<script src="js/heatmap.js"></script>
+<script src="js/edges.js"></script>
+<script src="js/nodes.js"></script>
+<script src="js/wordgrid.js"></script>
+<script src="js/categories.js"></script>
+<script src="js/documents.js"></script>
+<script src="js/landscape.js"></script>
+</body>
+</html>
