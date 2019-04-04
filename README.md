@@ -1,0 +1,20 @@
+```
+python modir3.py --data-in=data/news/coba_news_amb_small.json
+--hnsw-file=data/news/tree
+--hnsw-ef=50
+--hnsw-ef-init=30
+--hnsw-M=16
+--hnsw-threads=2
+--d2v-max-vocab=20000
+--d2v-min-count=10
+--d2v-size=64
+--d2v-epochs=100
+--d2v-workers=6
+--d2v-skip-empty
+--hypergraph-files=data/news/hypergraph
+--neighbourhood-k=5
+--global-k=10
+--related-k=10
+--data-set=news
+--data-out=data/news/final
+```

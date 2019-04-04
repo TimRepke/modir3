@@ -1,0 +1,12 @@
+ujson
+numpy
+scipy
+matplotlib
+gensim
+tqdm
+
+# HNSWlib
+# see https://github.com/nmslib/hnswlib#bindings-installation
+
+# pytorch
+# see: https://pytorch.org/get-started/locally/#start-locally
