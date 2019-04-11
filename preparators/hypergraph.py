@@ -1,9 +1,11 @@
-from abc import ABC, abstractmethod
-import numpy as np
-from scipy.sparse import lil_matrix, spmatrix, csr_matrix, save_npz, load_npz
+from scipy.sparse import spmatrix, coo_matrix, lil_matrix, csr_matrix, dok_matrix, save_npz, load_npz
 from .gensim_processor import GensimProcessor
+from collections import Counter
+from abc import ABC, abstractmethod
 from .hnswtree import HNSWTree
 import ujson as json
+import numpy as np
+import timeit
 import os
 
 
@@ -137,24 +139,27 @@ class HyperGraph(ABC):
             print('  - loaded node data from file')
         else:
             print('  - preparing node data...')
+            time0 = timeit.default_timer()
             self.nodes = {}
             self._prepare_graph()
 
             with open(self.FILENAME_NODES, 'w') as f:
                 json.dump(self.nodes, f)
-            print('  - prepared node data')
+            print(f'  - prepared node data - {timeit.default_timer() - time0:.4f}s')
 
     def _ensure_node_matrices(self):
-        if os.path.isfile(self.FILENAME_NODE2DOCS) and \
-                os.path.isfile(self.FILENAME_NODE2NODES):
+        if os.path.isfile(self.FILENAME_NODE2DOCS) and os.path.isfile(self.FILENAME_NODE2NODES):
             self.node2docs = load_npz(self.FILENAME_NODE2DOCS)
             self.node2nodes = load_npz(self.FILENAME_NODE2NODES)
             print('  - loaded node matrices from files')
         else:
             print('  - preparing node matrices...')
-            self.node2docs = lil_matrix((len(self.nodes), self.num_docs), dtype=np.int16)
-            self.node2nodes = lil_matrix((len(self.nodes), len(self.nodes)), dtype=np.int16)
-            print(f'  - nodes: {len(self.nodes)}, docs: {self.num_docs}')
+            time0 = timeit.default_timer()
+            self.node2docs = coo_matrix((len(self.nodes), self.num_docs), dtype=np.int16)
+            self.node2nodes = coo_matrix((len(self.nodes), len(self.nodes)), dtype=np.int16)
+            print(f'  - node2docs: {self.node2docs.shape}, '
+                  f'node2nodes: {self.node2nodes.shape} - '
+                  f'{timeit.default_timer() - time0:.4f}s')
 
             self._build_node_matrices()
 
@@ -162,33 +167,37 @@ class HyperGraph(ABC):
                 json.dump(self.nodes, f)
             print('  - updated node data')
 
-            self.node2docs = self.node2docs.tocsc()
-            self.node2nodes = self.node2nodes.tocsr()
             save_npz(self.FILENAME_NODE2DOCS, self.node2docs)
             save_npz(self.FILENAME_NODE2NODES, self.node2nodes)
             print('  - prepared node matrices')
 
     def _build_node_matrices(self):
-        for node in self.nodes.values():
-            for doc_id in node['docs']:
-                self.node2docs[node['idx'], doc_id] += 1
-            del node['docs']
+        time0 = timeit.default_timer()
+        n2d = [(node['idx'], di) for node in self.nodes.values() for di in node['docs']]
+        n2d = Counter(n2d)
+        if self.min_node2doc_count is None:
+            n2d = [(i, j, c) for (i, j), c in n2d.items()]
+        else:
+            n2d = [(i, j, c) for (i, j), c in n2d.items() if c >= self.min_node2doc_count]
+        self.node2docs = coo_matrix(([c for _, _, c in n2d],
+                                     ([i for i, _, _ in n2d],
+                                      [j for _, j, _ in n2d])),
+                                    shape=(len(self.nodes), self.num_docs), dtype=np.int16)
+        self.node2docs = self.node2docs.tocsr()
+        print(f'  - non-zero node2docs: {self.node2docs.getnnz()} after {timeit.default_timer() - time0:.4f}s')
 
-            for idx in node['nodes']:
-                self.node2nodes[node['idx'], idx] += 1
-            del node['nodes']
-
-            node['freq'] = int(self.node2docs[node['idx']].sum())
-            node['doc_freq'] = int(self.node2docs[node['idx']].getnnz())
-            node['degree'] = int(self.node2nodes[node['idx']].getnnz())
-            node['degree_weighted'] = int(self.node2nodes[node['idx']].sum())
-
-        print(f'  - non-zero node2docs: {self.node2docs.getnnz()}, node2nodes: {self.node2nodes.getnnz()}')
-        if self.min_node2doc_count is not None:
-            self.node2docs[self.node2docs < self.min_node2doc_count] = .0
-        if self.min_node2node_count is not None:
-            self.node2nodes[self.node2nodes < self.min_node2node_count] = .0
-        print(f'  - non-zero (filtered) node2docs: {self.node2docs.getnnz()}, node2nodes: {self.node2nodes.getnnz()}')
+        n2n = [(node['idx'], di) for node in self.nodes.values() for di in node['docs']]
+        n2n = Counter(n2n)
+        if self.min_node2node_count is None:
+            n2n = [(i, j, c) for (i, j), c in n2n.items()]
+        else:
+            n2n = [(i, j, c) for (i, j), c in n2n.items() if c >= self.min_node2node_count]
+        self.node2nodes = coo_matrix(([c for _, _, c in n2n],
+                                      ([i for i, _, _ in n2n],
+                                       [j for _, j, _ in n2n])),
+                                     shape=(len(self.nodes), self.num_docs), dtype=np.int16)
+        self.node2nodes = self.node2nodes.tocsr()
+        print(f'  - non-zero node2nodes: {self.node2nodes.getnnz()} after {timeit.default_timer() - time0:.4f}s')
 
     def _assert_node(self, name, values=None):
         if name not in self.nodes:
@@ -202,4 +211,3 @@ class HyperGraph(ABC):
                     self.nodes[name][k] = v
 
         return self.nodes[name]
-

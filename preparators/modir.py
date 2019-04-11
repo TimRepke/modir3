@@ -127,6 +127,8 @@ class Trainer:
                 doc_nodes = self.hypergraph.node2docs.T.tocsr()[doc_i].indices
                 # get all documents of these nodes are also connected to
                 nodes_docs = self.hypergraph.node2docs.tocsr()[doc_nodes].indices
+                if len(nodes_docs) >= self.related_samples:
+                    nodes_docs = np.random.choice(nodes_docs, self.related_samples, replace=False)
 
                 self.optimizer.zero_grad()
                 loss = self.model.forward(doc_i,
@@ -134,7 +136,7 @@ class Trainer:
                                           doc_row.data,  # distances of documents in neighbourhood of doc_i
                                           doc_global.indices,
                                           doc_global.data,
-                                          np.random.choice(nodes_docs, self.related_samples, replace=False))
+                                          nodes_docs)
                 loss.backward()
                 self.optimizer.step()
                 cnt += 1
