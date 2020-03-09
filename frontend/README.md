@@ -1,4 +1,7 @@
 # MODiR Landscape Prototype using D3
+
+**NOTE:** This is an older version. The demo is maintained at https://github.com/TimRepke/modir-viewer
+
 run server:
 
 ```
